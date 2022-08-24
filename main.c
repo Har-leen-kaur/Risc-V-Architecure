@@ -37,6 +37,7 @@ uint8_t getRS2(uint32_t instruction);
 uint8_t getRD(uint32_t instruction);
 uint8_t getOpCode(uint32_t instruction);
 uint8_t getFunc7(uint32_t instruction);
+uint32_t shamt(uint32_t instruction);
 
 //immediate functions
 uint32_t imm_I(uint32_t instruction);
@@ -88,8 +89,13 @@ void BGEU(CPU *cpu, uint32_t instruction);
 void LUI1(CPU *cpu, uint32_t instruction);
 void AUIPC1(CPU *cpu, uint32_t instruction);
 
-// //J_Type functions
+//J_Type functions
 void JAL1(CPU *cpu, uint32_t instruction);
+
+//shift functions
+void SLLI(CPU *cpu, uint32_t instruction);
+void SRLI(CPU *cpu, uint32_t instruction);
+void SRAI(CPU *cpu, uint32_t instruction);
 
 //initialises the cpu to the values given
 CPU *CPU_init(const char *path_to_inst_mem, const char *path_to_data_mem)
@@ -189,15 +195,44 @@ uint8_t getFunc7(uint32_t instruction)
 	return (instruction >> 25) & 0x7f;
 };
 
-//GOOOGLE WHY INT§"-T INSTEAD OF UINT§"-T in shifting
+//PROBLEM IS IN SHAMT-- ENDLESS LOOP but why?
+uint32_t shamt(uint32_t instruction)
+{ //shifting 20 bits to the left and ANDing with last 5 bits
+	//printf("%d", 9999);
+
+	uint32_t temp_instr = (instruction >> 20) & 0x1f;
+
+	if ((instruction >> 31) == 1)
+	{
+		return (temp_instr | 0xffffffe0);
+	}
+	else
+	{
+		//return (temp_instr & 0x0000001f);
+		return (temp_instr | 0x00000000);
+	}
+}
+
 uint32_t imm_I(uint32_t instruction)
 {
-	//imm_I[11:0] = instruction[20:31]
-	return ((int32_t)(instruction & 0xfff00000)) >> 20;
+	//sign extend the bit after shifting
+	uint32_t temp_instr = (instruction & 0xfff00000) >> 20;
+
+	//if bit is 1, then 'or' with the temp_instr
+	if ((instruction >> 31) == 1)
+	{
+		return (temp_instr | 0xfffff000);
+	}
+	else
+	{
+		return (temp_instr & 0x00000fff);
+	}
 }
 
 uint32_t imm_S(uint32_t instruction)
 {
+	//printf("%d", 4534533);
+
 	// imm[11:5] = inst[31:25], imm[4:0] = inst[11:7]
 	return ((int32_t)(instruction & 0xfe000000) >> (25 - 20)) | ((instruction >> (7 - 0)) & 0x1f);
 };
@@ -216,6 +251,8 @@ uint32_t imm_U(uint32_t instruction)
 
 uint32_t imm_J(uint32_t instruction)
 {
+	//printf("%d", 123);
+
 	// imm[20|10:1|11|19:12] = inst[31|30:21|20|19:12]
 	return ((int32_t)(instruction & 0x80000000) >> 11) | (instruction & 0xff000) // imm[19:12]
 		   | ((instruction >> 9) & 0x800)										 // imm[11]
@@ -234,6 +271,8 @@ void ADD(CPU *cpu, uint32_t instruction)
 
 void SUB(CPU *cpu, uint32_t instruction)
 {
+	//printf("%d", 55555);
+
 	uint8_t rd = getRD(instruction);
 	uint8_t rs1 = getRS1(instruction);
 	uint8_t rs2 = getRS2(instruction);
@@ -242,10 +281,12 @@ void SUB(CPU *cpu, uint32_t instruction)
 }
 
 void SLL(CPU *cpu, uint32_t instruction)
-{
+{ //I am temporarily changing uint to int to check if it works (22.08.22)
+	printf("%d", 55555);
 	uint8_t rd = getRD(instruction);
 	uint8_t rs1 = getRS1(instruction);
 	uint8_t rs2 = getRS2(instruction);
+
 	cpu->regfile_[rd] = cpu->regfile_[rs1] << cpu->regfile_[rs2];
 	cpu->pc_ += 0x4;
 }
@@ -327,7 +368,18 @@ void LB(CPU *cpu, uint32_t instruction)
 	uint8_t rd = getRD(instruction);
 	uint8_t rs1 = getRS1(instruction);
 	uint32_t imm = imm_I(instruction);
-	cpu->regfile_[rd] = cpu->data_mem_[cpu->regfile_[rs1] + imm];
+	uint8_t tmp = cpu->regfile_[rd] = cpu->data_mem_[cpu->regfile_[rs1] + imm];
+
+	//take last 8 bits
+	if ((tmp & 0x80)>1)
+    {
+        cpu->regfile_[rd] = 0xffffff00 | tmp;
+    }
+    else
+    {
+        cpu->regfile_[rd] = 0x000000ff & tmp;
+    }
+
 	cpu->pc_ += 0x4;
 }
 
@@ -336,7 +388,18 @@ void LH(CPU *cpu, uint32_t instruction)
 	uint8_t rd = getRD(instruction);
 	uint8_t rs1 = getRS1(instruction);
 	uint32_t imm = imm_I(instruction);
-	cpu->regfile_[rd] = *(uint16_t *)(cpu->regfile_[rs1] + imm + cpu->data_mem_);
+	uint16_t tmp = cpu->regfile_[rd] = *(uint16_t *)(cpu->regfile_[rs1] + imm + cpu->data_mem_);
+
+	//Take last 16 bits
+	if ((tmp & 0x8000) > 1)
+    {
+        cpu->regfile_[rd] = 0xffff0000 | tmp;
+    }
+    else
+    {
+        cpu->regfile_[rd] = 0x0000ffff & tmp;
+    }
+
 	cpu->pc_ += 0x4;
 }
 
@@ -346,6 +409,8 @@ void LW(CPU *cpu, uint32_t instruction)
 	uint8_t rs1 = getRS1(instruction);
 	uint32_t imm = imm_I(instruction);
 	cpu->regfile_[rd] = *(uint32_t *)(cpu->regfile_[rs1] + imm + cpu->data_mem_);
+	cpu->pc_ += 0x4;
+
 }
 
 void LBU(CPU *cpu, uint32_t instruction)
@@ -354,6 +419,8 @@ void LBU(CPU *cpu, uint32_t instruction)
 	uint8_t rs1 = getRS1(instruction);
 	uint32_t imm = imm_I(instruction);
 	cpu->regfile_[rd] = cpu->data_mem_[cpu->regfile_[rs1] + imm];
+	cpu->pc_ += 0x4;
+
 }
 
 void LHU(CPU *cpu, uint32_t instruction)
@@ -362,6 +429,8 @@ void LHU(CPU *cpu, uint32_t instruction)
 	uint8_t rs1 = getRS1(instruction);
 	uint32_t imm = imm_I(instruction);
 	cpu->regfile_[rd] = *(uint16_t *)(cpu->regfile_[rs1] + imm + cpu->data_mem_);
+	cpu->pc_ += 0x4;
+
 }
 
 void ADDI(CPU *cpu, uint32_t instruction)
@@ -379,6 +448,8 @@ void SLTI(CPU *cpu, uint32_t instruction)
 	uint8_t rs1 = getRS1(instruction);
 	uint32_t imm = imm_I(instruction);
 	cpu->regfile_[rd] = cpu->regfile_[rs1] < imm;
+	cpu->pc_ += 4;
+
 }
 
 void SLTIU(CPU *cpu, uint32_t instruction)
@@ -387,6 +458,8 @@ void SLTIU(CPU *cpu, uint32_t instruction)
 	uint8_t rs1 = getRS1(instruction);
 	uint32_t imm = imm_I(instruction);
 	cpu->regfile_[rd] = cpu->regfile_[rs1] < imm;
+	cpu->pc_ += 4;
+
 }
 
 void XORI(CPU *cpu, uint32_t instruction)
@@ -424,6 +497,8 @@ void SB(CPU *cpu, uint32_t instruction)
 	uint8_t rs2 = getRS2(instruction);
 	uint32_t imm = imm_S(instruction);
 	cpu->data_mem_[cpu->regfile_[rs1] + (int32_t)imm] = (uint8_t)cpu->regfile_[rs2];
+	cpu->pc_ += 0x4;
+
 }
 
 void SH(CPU *cpu, uint32_t instruction)
@@ -442,7 +517,7 @@ void SW(CPU *cpu, uint32_t instruction)
 	uint8_t rs1 = getRS1(instruction);
 	uint8_t rs2 = getRS2(instruction);
 	uint32_t imm = imm_S(instruction);
-	*(uint32_t *)(cpu->data_mem_ + cpu->regfile_[rs1] + imm) = (uint32_t)cpu->regfile_[rs2];
+	*(uint32_t *)(cpu->data_mem_ + cpu->regfile_[rs1] + (int32_t)imm) = (uint32_t)cpu->regfile_[rs2];
 	cpu->pc_ += 0x4;
 }
 
@@ -481,9 +556,9 @@ void BNE(CPU *cpu, uint32_t instruction)
 
 void BLT(CPU *cpu, uint32_t instruction)
 {
-	uint8_t rs1 = getRS1(instruction);
-	uint8_t rs2 = getRS2(instruction);
-	uint32_t imm = imm_B(instruction);
+	int8_t rs1 = getRS1(instruction);
+	int8_t rs2 = getRS2(instruction);
+	int32_t imm = imm_B(instruction);
 
 	if (cpu->regfile_[rs1] < cpu->regfile_[rs2])
 	{
@@ -497,11 +572,11 @@ void BLT(CPU *cpu, uint32_t instruction)
 
 void BGE(CPU *cpu, uint32_t instruction)
 {
-	uint8_t rs1 = getRS1(instruction);
-	uint8_t rs2 = getRS2(instruction);
-	uint32_t imm = imm_B(instruction);
+	int8_t rs1 = getRS1(instruction);
+	int8_t rs2 = getRS2(instruction);
+	int32_t imm = imm_B(instruction);
 
-	if (cpu->regfile_[rs1] >= cpu->regfile_[rs2])
+	if ((int32_t)cpu->regfile_[rs1] >= cpu->regfile_[rs2])
 	{
 		cpu->pc_ = cpu->pc_ + (int32_t)imm;
 	}
@@ -519,7 +594,7 @@ void BLTU(CPU *cpu, uint32_t instruction)
 
 	if ((uint32_t)cpu->regfile_[rs1] < (uint32_t)cpu->regfile_[rs2])
 	{
-		cpu->pc_ = cpu->pc_ + (int32_t)imm;
+		cpu->pc_ = cpu->pc_ + (uint32_t)imm;
 	}
 	else
 	{
@@ -560,21 +635,56 @@ void AUIPC1(CPU *cpu, uint32_t instruction)
 	cpu->pc_ += 0x4;
 }
 
-// //J-Type Instruction
+//J-Type Instruction
 void JAL1(CPU *cpu, uint32_t instruction)
 {
+	//printf("%d", 66666);
 	uint8_t rd = getRD(instruction);
 	uint32_t imm = imm_J(instruction);
 	cpu->regfile_[rd] = cpu->pc_ + 0x4;
 	cpu->pc_ = cpu->pc_ + (int32_t)imm;
 }
 
+//Shift Instruction
+void SLLI(CPU *cpu, uint32_t instruction)
+{
+	printf("%d", 00000);
+	uint32_t imm = shamt(instruction);
+	uint8_t rd = getRD(instruction);
+	uint8_t rs1 = getRS1(instruction);
+	cpu->regfile_[rd] = cpu->regfile_[rs1] << imm;
+	cpu->pc_ += 0x04;
+}
+
+void SRLI(CPU *cpu, uint32_t instruction)
+{
+	uint32_t imm = shamt(instruction);
+	uint8_t rd = getRD(instruction);
+	uint8_t rs1 = getRS1(instruction);
+	cpu->regfile_[rd] = cpu->regfile_[rs1] >> imm;
+	cpu->pc_ += 0x04;
+}
+
+void SRAI(CPU *cpu, uint32_t instruction)
+{
+	//printf("%d", 66666);
+	//I am temporarily changing uint to int to check if it works (22.08.22)
+	uint32_t imm = shamt(instruction);
+	int8_t rd = getRD(instruction);
+	uint8_t rs1 = getRS1(instruction);
+
+	//######### with a star (vorzeichen)
+	cpu->regfile_[rd] = (int32_t)cpu->regfile_[rs1] >> imm;
+	cpu->pc_ += 0x04;
+}
+
 void CPU_execute(CPU *cpu)
 {
+
 	uint32_t instruction = *(uint32_t *)(cpu->instr_mem_ + (cpu->pc_ & 0xFFFFF));
 	// TODO
 
-	cpu->regfile_[0] = 0x00;  
+	cpu->regfile_[0] = 0x00;
 	uint8_t opCode = getOpCode(instruction); //check if I need to do &(address) of instruction
 	uint8_t func3 = getFunc3(instruction);
 	uint8_t func7 = getFunc7(instruction);
@@ -582,7 +692,59 @@ void CPU_execute(CPU *cpu)
 	switch (opCode)
 	{
 
-	case I: // 00010011
+	case R:
+		switch (func3)
+		{
+		case (0x00):
+			switch (func7)
+			{
+			case (0x00):
+				ADD(cpu, instruction);
+				break;
+			case (0x20):
+				SUB(cpu, instruction);
+				break;
+			}
+			break;
+
+		case (0x01):
+			SLL(cpu, instruction);
+			break;
+
+		case (0x02):
+			SLT(cpu, instruction);
+			break;
+		case (0x03):
+			SLTU(cpu, instruction);
+			break;
+		case (0x04):
+			XOR(cpu, instruction);
+			break;
+
+		case (0x05):
+			switch (func7)
+			{
+			case (0x00):
+				SRL(cpu, instruction);
+				break;
+			case (0x20):
+				SRA(cpu, instruction);
+				break;
+			}
+			break;
+
+		case (0x06):
+			OR(cpu, instruction);
+			break;
+		case (0x07):
+			AND(cpu, instruction);
+			break;
+
+		default:;
+		}
+		break;
+
+	case I:
 		switch (func3)
 		{
 		case (0x00):
@@ -592,10 +754,10 @@ void CPU_execute(CPU *cpu)
 			SLTI(cpu, instruction);
 			break;
 		case (0x01):
-			//SLLI(cpu, instruction);
+			SLLI(cpu, instruction);
 			break;
 		case (0x03):
-			//SLTIU(cpu, instruction);
+			SLTIU(cpu, instruction);
 			break;
 		case (0x04):
 			XORI(cpu, instruction);
@@ -610,30 +772,16 @@ void CPU_execute(CPU *cpu)
 			switch (func7)
 			{
 			case (0x00):
-				//SRLI(cpu, instruction);
+				SRLI(cpu, instruction);
 				break;
 			case (0x20):
-				//SRAI(cpu, instruction);
+				SRAI(cpu, instruction);
 				break;
 			}
 			break;
 		}
 		break;
 
-	case LUI:
-		LUI1(cpu, instruction);
-		break;
-
-	case AUIPC:
-		AUIPC1(cpu, instruction);
-		break;
-
-	case JAL:
-		JAL1(cpu, instruction);
-		break;
-	case JALR:
-		JALR1(cpu, instruction);
-		break;
 	case S:
 		switch (func3)
 		{
@@ -694,56 +842,24 @@ void CPU_execute(CPU *cpu)
 		}
 		break;
 
-	case R:
-		switch (func3)
-		{
-		case (0x00):
-			switch (func7)
-			{
-			case (0x00):
-				ADD(cpu, instruction);
-				break;
-			case (0x20):
-				SUB(cpu, instruction);
-				break;
-			}
-			break;
+	case LUI:
+		LUI1(cpu, instruction);
+		break;
 
-		case (0x05):
-			switch (func7)
-			{
-			case (0x00):
-				SRL(cpu, instruction);
-				break;
-			case (0x20):
-				SRA(cpu, instruction);
-				break;
-			}
-			break;
+	case AUIPC:
+		AUIPC1(cpu, instruction);
+		break;
 
-		case (0x02):
-			SLT(cpu, instruction);
-			break;
-		case (0x03):
-			SLTU(cpu, instruction);
-			break;
-		case (0x04):
-			XOR(cpu, instruction);
-			break;
-		case (0x06):
-			OR(cpu, instruction);
-			break;
-		case (0x07):
-			AND(cpu, instruction);
-			break;
-		case (0x01):
-			SLL(cpu, instruction);
-			break;
-		default:;
-		}
+	case JAL:
+		JAL1(cpu, instruction);
+		break;
+
+	case JALR:
+		JALR1(cpu, instruction);
 		break;
 	}
 
+	cpu->regfile_[0] = 0;
 }
 
 int main(int argc, char *argv[])
