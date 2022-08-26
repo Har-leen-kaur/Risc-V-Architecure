@@ -229,18 +229,15 @@ int32_t imm_I(uint32_t instruction)
 	}
 }
 
-int32_t imm_S(uint32_t instruction) //problem
-{
-	int32_t imm_s1 = (instruction & 0xf80) >> 7;
-	int32_t imm_s2 = ((instruction & 0xfe000000) >> (25-5));
-	int32_t temp_instr = (imm_s1 | imm_s2) ;
 
-	if((instruction >> 31) == 1){
-		return (temp_instr | 0xffff0000);
-	} else{
-		return (temp_instr & 0xffffffff);
-	}
-};
+int32_t imm_S(uint32_t instruction)
+{
+    int32_t S_immediate=(instruction&0x80000000) ? 0xFFFFF000 | (instruction&0xFE000000)>>20 | (instruction&0xF80)>>7
+    : (instruction&0xFE000000)>>20 | (instruction&0xF80)>>7;
+
+    return S_immediate;
+}
+
 
 int32_t imm_B(uint32_t instruction)
 {
@@ -523,6 +520,11 @@ void SW(CPU *cpu, uint32_t instruction) //PROBLEM HERE
 	int8_t rs1 = getRS1(instruction);
 	int8_t rs2 = getRS2(instruction);
 	int32_t imm = imm_S(instruction);
+	// printf("%d\n", imm);
+	// fflush(stdout);
+
+	//print imm s in decimal and then ffslush 
+	//pritnf imm word -- 14 immediate 
 	*(uint32_t *)(cpu->data_mem_ + cpu->regfile_[rs1] + (int32_t)imm) = (uint32_t)cpu->regfile_[rs2];
 	cpu->pc_ += 0x4;
 }
@@ -887,7 +889,10 @@ int main(int argc, char *argv[])
 	{
 		printf("%d: %X\n", i, cpu_inst->regfile_[i]);
 	}
+
+	//printf(%)
 	fflush(stdout);
+
 
 	return 0;
 }
